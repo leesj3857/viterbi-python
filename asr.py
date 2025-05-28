@@ -157,7 +157,7 @@ def viterbi(observations, hmm):
     T = len(observations)
     trans = hmm['trans']
     emit = hmm['states']
-    lambda1 = 0.5  # emission weight
+    lambda1 = 0.2  # emission weight
     lambda2 = 1.0  # transition weight
     delta = [[LOG_ZERO for _ in range(N)] for _ in range(T)]
     psi = [[-1 for _ in range(N)] for _ in range(T)]
@@ -185,7 +185,7 @@ def viterbi(observations, hmm):
     path.reverse()
     return path
 
-def state_seq_to_word_seq(state_seq, word_offsets, word_hmms, min_duration=15):
+def state_seq_to_word_seq(state_seq, word_offsets, word_hmms, min_duration=18):
     sorted_offsets = sorted(word_offsets.items(), key=lambda x: x[1])
     word_seq = []
     last_word = None
@@ -243,17 +243,7 @@ if __name__ == "__main__":
     # # Convert to word sequence
     # word_seq = state_seq_to_word_seq(state_seq, universal_hmm['word_offsets'])
 
-    # 예시 출력
-    for word, hmm in word_hmm_models.items():
-        print(f"Word: {word}")
-        print(f"Number of states: {len(hmm['states'])}")
-        print(f"Transition matrix size: {len(hmm['trans'])}x{len(hmm['trans'][0])}")
-        print()
-
-    print(f"Universal HMM total states: {len(universal_hmm['states'])}")
-    print(f"Global transition matrix size: {len(universal_hmm['trans'])} x {len(universal_hmm['trans'][0])}")
-
-    mfcc_files = collect_txt_files("mfc", limit=10)
+    mfcc_files = collect_txt_files("mfc", limit=100)
 
     # MLF 생성
     with open("recognized.txt", "w") as f:
