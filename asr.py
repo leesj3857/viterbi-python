@@ -99,7 +99,11 @@ def build_word_hmm(word_dict, phoneme_hmms):
                     row.append(trans[i][j])
                 internal_trans.append(row)
 
-            trans_blocks.append(internal_trans)
+            trans_blocks.append({
+                'trans': internal_trans,
+                'exit_prob': trans[num_states-1][num_states],  # 마지막 상태에서 종료 상태로 가는 확률
+                'entry_prob': trans[1][2]  # 시작 상태에서 첫 상태로 가는 확률
+            })
             state_map.append(state_index)
             state_index += len(internal_state_ids)
 
@@ -109,17 +113,18 @@ def build_word_hmm(word_dict, phoneme_hmms):
 
         # 각 음소의 전이행렬을 해당 위치에 삽입
         for block, start in zip(trans_blocks, state_map):
-            for i in range(len(block)):
-                for j in range(len(block[i])):
-                    total_trans[start + i][start + j] = block[i][j]
+            for i in range(len(block['trans'])):
+                for j in range(len(block['trans'][i])):
+                    total_trans[start + i][start + j] = block['trans'][i][j]
 
         # 음소 사이 연결: 이전 음소 마지막 상태 → 다음 음소 첫 상태
         for i in range(len(state_map) - 1):
-            if len(trans_blocks[i]) == 0 or len(trans_blocks[i + 1]) == 0:
+            if len(trans_blocks[i]['trans']) == 0 or len(trans_blocks[i + 1]['trans']) == 0:
                 continue  # 내부 상태가 없으면 skip
-            prev_last = state_map[i] + len(trans_blocks[i]) - 1
+            prev_last = state_map[i] + len(trans_blocks[i]['trans']) - 1
             next_first = state_map[i + 1]
-            total_trans[prev_last][next_first] = 1.0
+            # 이전 음소의 종료 확률과 다음 음소의 시작 확률을 곱함
+            total_trans[prev_last][next_first] = trans_blocks[i]['exit_prob'] * trans_blocks[i + 1]['entry_prob']
 
         word_hmms[word] = {
             'states': all_states,
@@ -185,27 +190,33 @@ def viterbi(observations, hmm):
     path.reverse()
     return path
 
-def state_seq_to_word_seq(state_seq, word_offsets, word_hmms, min_duration=18):
+def state_seq_to_word_seq(state_seq, word_offsets, word_hmms, min_duration=15):
     sorted_offsets = sorted(word_offsets.items(), key=lambda x: x[1])
     word_seq = []
     last_word = None
     word_duration = 0
+    last_state = -1
 
     for s in state_seq:
+        current_word = None
         for word, offset in sorted_offsets:
             length = len(word_hmms[word]['states'])
             if offset <= s < offset + length:
-                if last_word == word:
-                    word_duration += 1
-                else:
-                    if last_word and last_word != "<s>" and word_duration >= min_duration:
-                        word_seq.append(last_word)
-                    last_word = word
-                    word_duration = 1
+                current_word = word
                 break
 
-    # 마지막 단어 추가
-    if last_word and last_word != "<s>" and word_duration >= min_duration:
+        if current_word == last_word:
+            word_duration += 1
+        else:
+            # 이전 단어가 있고, 최소 지속 시간을 만족하면 추가
+            if last_word and word_duration >= min_duration:
+                word_seq.append(last_word)
+            last_word = current_word
+            word_duration = 1
+            last_state = s
+
+    # 마지막 단어 처리
+    if last_word and word_duration >= min_duration:
         word_seq.append(last_word)
 
     return word_seq
@@ -252,7 +263,7 @@ if __name__ == "__main__":
             obs = read_mfcc_file(filepath)
             state_seq = viterbi(obs, universal_hmm)
             word_seq = state_seq_to_word_seq(state_seq, universal_hmm['word_offsets'], word_hmm_models)
-            cleaned_word_seq = [w for w in word_seq if w != '<s>']
+            cleaned_word_seq = [w for w in word_seq if w != '']
             rel_path = filepath.replace("\\", "/").replace(".txt", ".rec")
             f.write(f"\"{rel_path}\"\n")
             for word in cleaned_word_seq:
