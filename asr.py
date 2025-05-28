@@ -148,26 +148,23 @@ def log_dot(vec, mixtures):
     total = 0.0
     for m in mixtures:
         diff = np.array(vec) - np.array(m['mean'])
-        exponent = -0.5 * np.dot(diff, diff) / np.array(m['variance']).mean()  # 단순화
+        exponent = -0.5 * np.dot(diff, diff) / np.array(m['variance']).mean()
         total += m['weight'] * np.exp(exponent)
-    return np.log(total + 1e-10)  # log likelihood
+    return np.log(total + 1e-10)  # ← small constant to prevent log(0)
 
 def viterbi(observations, hmm):
     N = len(hmm['states'])
     T = len(observations)
     trans = hmm['trans']
     emit = hmm['states']
-    lambda1 = 0.1   # emission 덜 반영
-    lambda2 = 0.6   # transition 더 반영
-
+    lambda1 = 0.5  # emission weight
+    lambda2 = 1.0  # transition weight
     delta = [[LOG_ZERO for _ in range(N)] for _ in range(T)]
     psi = [[-1 for _ in range(N)] for _ in range(T)]
 
-    # 초기화
     for i in range(N):
-        delta[0][i] = lambda1 * log_dot(observations[0], emit[i])
+        delta[0][i] = log_dot(observations[0], emit[i])
 
-    # 재귀
     for t in range(1, T):
         for j in range(N):
             max_prob, max_state = LOG_ZERO, -1
@@ -180,7 +177,6 @@ def viterbi(observations, hmm):
             delta[t][j] = max_prob + lambda1 * log_dot(observations[t], emit[j])
             psi[t][j] = max_state
 
-    # 경로 추적
     last_state = max(range(N), key=lambda i: delta[T-1][i])
     path = [last_state]
     for t in range(T-1, 0, -1):
@@ -189,22 +185,30 @@ def viterbi(observations, hmm):
     path.reverse()
     return path
 
-def state_seq_to_word_seq(state_seq, word_offsets, word_hmm_models):
-    result = []
-    offset_ranges = {
-        word: range(offset, offset + len(word_hmm_models[word]['states']))
-        for word, offset in word_offsets.items()
-    }
-    current_word = None
+def state_seq_to_word_seq(state_seq, word_offsets, word_hmms, min_duration=15):
+    sorted_offsets = sorted(word_offsets.items(), key=lambda x: x[1])
+    word_seq = []
+    last_word = None
+    word_duration = 0
 
-    for state in state_seq:
-        for word, r in offset_ranges.items():
-            if state in r:
-                if word != current_word:
-                    result.append(word)
-                    current_word = word
+    for s in state_seq:
+        for word, offset in sorted_offsets:
+            length = len(word_hmms[word]['states'])
+            if offset <= s < offset + length:
+                if last_word == word:
+                    word_duration += 1
+                else:
+                    if last_word and last_word != "<s>" and word_duration >= min_duration:
+                        word_seq.append(last_word)
+                    last_word = word
+                    word_duration = 1
                 break
-    return [w for w in result if w != '<s>']
+
+    # 마지막 단어 추가
+    if last_word and last_word != "<s>" and word_duration >= min_duration:
+        word_seq.append(last_word)
+
+    return word_seq
 
 def collect_txt_files(root_dir, limit=100):
     txt_files = []
@@ -249,7 +253,7 @@ if __name__ == "__main__":
     print(f"Universal HMM total states: {len(universal_hmm['states'])}")
     print(f"Global transition matrix size: {len(universal_hmm['trans'])} x {len(universal_hmm['trans'][0])}")
 
-    mfcc_files = collect_txt_files("mfc", limit=50)
+    mfcc_files = collect_txt_files("mfc", limit=10)
 
     # MLF 생성
     with open("recognized.txt", "w") as f:

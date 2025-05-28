@@ -16,10 +16,8 @@ def build_universal_hmm(word_hmm_models, bigram_probs):
     word_offsets = {}
     state_index = 0
 
-    # ✅ <s> 제외하고 단어 HMM 구성
+    # 모든 단어 상태를 global state로 이어붙임
     for word, hmm in word_hmm_models.items():
-        if word == "<s>":
-            continue
         word_offsets[word] = state_index
         global_states.extend(hmm['states'])
         state_index += len(hmm['states'])
@@ -27,17 +25,15 @@ def build_universal_hmm(word_hmm_models, bigram_probs):
     total_states = len(global_states)
     global_trans = [[0.0 for _ in range(total_states)] for _ in range(total_states)]
 
-    # ✅ <s> 제외하고 단어 내부 전이 복사
+    # 각 단어 내부 전이 복사
     for word, hmm in word_hmm_models.items():
-        if word == "<s>":
-            continue
         offset = word_offsets[word]
         local_trans = hmm['trans']
         for i in range(len(local_trans)):
             for j in range(len(local_trans[i])):
                 global_trans[offset + i][offset + j] = local_trans[i][j]
 
-    # ✅ bigram에서도 <s> 제외
+    # 단어 간 전이 연결
     for from_word in bigram_probs:
         if from_word not in word_offsets:
             continue
@@ -50,10 +46,12 @@ def build_universal_hmm(word_hmm_models, bigram_probs):
                 continue
             to_offset = word_offsets[to_word]
             global_trans[from_last][to_offset] += prob
+
     for i, row in enumerate(global_trans):
         row_sum = sum(row)
         if row_sum > 0:
             global_trans[i] = [x / row_sum for x in row]
+            
     return {
         'states': global_states,
         'trans': global_trans,
